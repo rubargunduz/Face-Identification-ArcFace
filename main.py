@@ -31,6 +31,8 @@ def log_attendance(name):
 
 # Start webcam
 cap = cv2.VideoCapture(0)
+cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
+cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 print("Press 'q' to quit")
 
 while True:
