@@ -5,7 +5,7 @@ from datetime import datetime
 import insightface
 from insightface.app import FaceAnalysis
 from numpy.linalg import norm
-from src.anti_spoof_predict import AntiSpoofPredict  # Anti-spoofing import
+from src.anti_spoof_predict import AntiSpoofPredict
 from src.generate_patches import CropImage
 from src.utility import parse_model_name
 
@@ -44,35 +44,42 @@ cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
 cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 720)
 print("Press 'q' to quit")
 
+def is_real_face(frame, box):
+    x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
+    prediction = np.zeros((1, 3))
+    for model_name in model_names:
+        h_input, w_input, model_type, scale = parse_model_name(model_name)
+        param = {
+            "org_img": frame,
+            "bbox": [x1, y1, x2-x1, y2-y1],
+            "scale": scale,
+            "out_w": w_input,
+            "out_h": h_input,
+            "crop": True,
+        }
+        if scale is None:
+            param["crop"] = False
+        img = image_cropper.crop(**param)
+        prediction += anti_spoof.predict(img, os.path.join(model_dir, model_name))
+    label = np.argmax(prediction)
+    value = prediction[0][label] / len(model_names)
+    return label == 1
+
+# ...existing code...
+
+previous_present = set()
+
 while True:
     ret, frame = cap.read()
     if not ret:
         break
 
     faces = app.get(frame)
+    current_present = set()
     for face in faces:
         box = face.bbox.astype(int)
-        x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
-        face_img = frame[y1:y2, x1:x2]
-        prediction = np.zeros((1, 3))
-        for model_name in model_names:
-            h_input, w_input, model_type, scale = parse_model_name(model_name)
-            param = {
-                "org_img": frame,
-                "bbox": [x1, y1, x2-x1, y2-y1],
-                "scale": scale,
-                "out_w": w_input,
-                "out_h": h_input,
-                "crop": True,
-            }
-            if scale is None:
-                param["crop"] = False
-            img = image_cropper.crop(**param)
-            prediction += anti_spoof.predict(img, os.path.join(model_dir, model_name))
-        label = np.argmax(prediction)
-        value = prediction[0][label] / len(model_names)
-        if label != 1:
-            # Spoof detected, draw red box and skip
+        if not is_real_face(frame, box):
+            x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
             cv2.putText(frame, "Fake", (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
@@ -88,13 +95,17 @@ while True:
                 best_score = score
                 name = known_name
 
-        # Draw and log
+        # Draw
         cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
         cv2.putText(frame, name, (box[0], box[1] - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
 
         if name != "Unknown":
-            log_attendance(name)
+            current_present.add(name)
+            if name not in previous_present:
+                log_attendance(name)
+
+    previous_present = current_present
 
     cv2.imshow("Face Attendance", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
