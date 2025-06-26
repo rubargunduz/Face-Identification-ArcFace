@@ -8,6 +8,7 @@ from numpy.linalg import norm
 from src.anti_spoof_predict import AntiSpoofPredict
 from src.generate_patches import CropImage
 from src.utility import parse_model_name
+import time
 
 # Load ArcFace model
 app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
@@ -65,9 +66,16 @@ def is_real_face(frame, box):
     value = prediction[0][label] / len(model_names)
     return label == 1
 
-# ...existing code...
+
 
 previous_present = set()
+
+
+anti_spoof_results = {}  # Store last spoofing result for each face (by bbox or name)
+frame_count = 0
+N = 3  # Process anti-spoofing every Nth frame
+
+prev_time = time.time()
 
 while True:
     ret, frame = cap.read()
@@ -76,10 +84,22 @@ while True:
 
     faces = app.get(frame)
     current_present = set()
+    frame_count += 1
+
     for face in faces:
-        box = face.bbox.astype(int)
-        if not is_real_face(frame, box):
-            x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
+        box = tuple(face.bbox.astype(int))
+        # Use face.bbox as key; you could use face id/name if available
+        spoof_key = box
+
+        # Only run anti-spoofing every Nth frame
+        if frame_count % N == 0 or spoof_key not in anti_spoof_results:
+            is_real = is_real_face(frame, box)
+            anti_spoof_results[spoof_key] = is_real
+        else:
+            is_real = anti_spoof_results[spoof_key]
+
+        if not is_real:
+            x1, y1, x2, y2 = box
             cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
             cv2.putText(frame, "Fake", (x1, y1 - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
@@ -106,6 +126,15 @@ while True:
                 log_attendance(name)
 
     previous_present = current_present
+
+
+
+    # Calculate and display FPS
+    curr_time = time.time()
+    fps = 1.0 / (curr_time - prev_time)
+    prev_time = curr_time
+    cv2.putText(frame, f"FPS: {fps:.2f}", (20, 40),
+                cv2.FONT_HERSHEY_SIMPLEX, 1, (255, 255, 0), 2)
 
     cv2.imshow("Face Attendance", frame)
     if cv2.waitKey(1) & 0xFF == ord('q'):
