@@ -5,6 +5,9 @@ from datetime import datetime
 import insightface
 from insightface.app import FaceAnalysis
 from numpy.linalg import norm
+from src.anti_spoof_predict import AntiSpoofPredict  # Anti-spoofing import
+from src.generate_patches import CropImage
+from src.utility import parse_model_name
 
 # Load ArcFace model
 app = FaceAnalysis(name='buffalo_l', providers=['CPUExecutionProvider'])
@@ -29,6 +32,12 @@ def log_attendance(name):
         f.write(f"{name},{now}\n")
     print(f"[LOGGED] {name} at {now}")
 
+# Initialize anti-spoofing predictor
+anti_spoof = AntiSpoofPredict(device_id=0)
+image_cropper = CropImage()
+model_dir = "resources/anti_spoof_models"
+model_names = os.listdir(model_dir)
+
 # Start webcam
 cap = cv2.VideoCapture(0)
 cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1280)
@@ -42,6 +51,33 @@ while True:
 
     faces = app.get(frame)
     for face in faces:
+        box = face.bbox.astype(int)
+        x1, y1, x2, y2 = box[0], box[1], box[2], box[3]
+        face_img = frame[y1:y2, x1:x2]
+        prediction = np.zeros((1, 3))
+        for model_name in model_names:
+            h_input, w_input, model_type, scale = parse_model_name(model_name)
+            param = {
+                "org_img": frame,
+                "bbox": [x1, y1, x2-x1, y2-y1],
+                "scale": scale,
+                "out_w": w_input,
+                "out_h": h_input,
+                "crop": True,
+            }
+            if scale is None:
+                param["crop"] = False
+            img = image_cropper.crop(**param)
+            prediction += anti_spoof.predict(img, os.path.join(model_dir, model_name))
+        label = np.argmax(prediction)
+        value = prediction[0][label] / len(model_names)
+        if label != 1:
+            # Spoof detected, draw red box and skip
+            cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 0, 255), 2)
+            cv2.putText(frame, "Fake", (x1, y1 - 10),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
+            continue
+
         emb = face.embedding
         name = "Unknown"
         best_score = 0
@@ -53,7 +89,6 @@ while True:
                 name = known_name
 
         # Draw and log
-        box = face.bbox.astype(int)
         cv2.rectangle(frame, (box[0], box[1]), (box[2], box[3]), (0, 255, 0), 2)
         cv2.putText(frame, name, (box[0], box[1] - 10),
                     cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
