@@ -1,13 +1,13 @@
 import cv2
 import numpy as np
 import os
-from datetime import datetime
 import insightface
 from insightface.app import FaceAnalysis
 from numpy.linalg import norm
 from src.anti_spoof_predict import AntiSpoofPredict
 from src.generate_patches import CropImage
 from src.utility import parse_model_name
+from attendance_db import log_attendance
 import time
 
 # Load ArcFace model
@@ -25,13 +25,6 @@ for filename in os.listdir("embeddings"):
 # Cosine similarity function
 def cosine_similarity(a, b):
     return np.dot(a, b) / (norm(a) * norm(b))
-
-# Logging function
-def log_attendance(name):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open("attendance_log.csv", "a") as f:
-        f.write(f"{name},{now}\n")
-    print(f"[LOGGED] {name} at {now}")
 
 # Initialize anti-spoofing predictor
 anti_spoof = AntiSpoofPredict(device_id=0)
