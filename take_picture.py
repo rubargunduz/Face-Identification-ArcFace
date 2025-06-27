@@ -25,8 +25,6 @@ def take_photo():
 
     # Open webcam
     cap = cv2.VideoCapture(0)
-    
-    # Set highest resolution supported
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
 
@@ -34,24 +32,29 @@ def take_photo():
         messagebox.showerror("Error", "Webcam not accessible.")
         return
 
-    # Countdown
-    for i in range(3, 0, -1):
+    def capture_and_save():
+        ret, frame = cap.read()
+        if ret:
+            filename = get_next_filename(save_path)
+            cv2.imwrite(filename, frame)
+            messagebox.showinfo("Success", f"Saved photo as {filename}")
+        else:
+            messagebox.showerror("Error", "Failed to capture image.")
+
+    # Create a window to show the live feed and a button to capture
+    cv2.namedWindow("Taking Photo")
+    while True:
         ret, frame = cap.read()
         if not ret:
             break
-        display = frame.copy()
-        cv2.putText(display, str(i), (300, 300), cv2.FONT_HERSHEY_SIMPLEX, 6, (0, 0, 255), 12)
-        cv2.imshow("Taking Photo", display)
-        cv2.waitKey(1000)
-
-    # Take final picture
-    ret, frame = cap.read()
-    if ret:
-        filename = get_next_filename(save_path)
-        cv2.imwrite(filename, frame)
-        messagebox.showinfo("Success", f"Saved photo as {filename}")
-    else:
-        messagebox.showerror("Error", "Failed to capture image.")
+        cv2.imshow("Taking Photo", frame)
+        # Wait for button press in GUI
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+        root.update()
+        if getattr(root, 'capture_flag', False):
+            capture_and_save()
+            root.capture_flag = False
 
     cap.release()
     cv2.destroyAllWindows()
@@ -64,6 +67,11 @@ tk.Label(root, text="Enter name:").pack(pady=5)
 name_entry = tk.Entry(root, width=30)
 name_entry.pack(pady=5)
 
-tk.Button(root, text="Take Photo", command=take_photo).pack(pady=10)
+def on_capture():
+    root.capture_flag = True
 
+tk.Button(root, text="Start Camera & Take Photos", command=take_photo).pack(pady=10)
+tk.Button(root, text="Capture Photo", command=on_capture).pack(pady=10)
+
+root.capture_flag = False
 root.mainloop()
